@@ -1,0 +1,295 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;1,14..32,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import 'tailwindcss';
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --radius-DEFAULT: var(--radius);
+
+  --color-navy: var(--navy);
+  --color-navy-dark: var(--navy-dark);
+  --color-indigo: var(--indigo);
+  --color-indigo-light: var(--indigo-light);
+  --color-purple: var(--purple);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
+}
+
+:root {
+  --background: #F6FAFC;
+  --foreground: #121C2E;
+  --card: #FFFFFF;
+  --card-foreground: #121C2E;
+  --primary: #6129C7;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F3EFFC;
+  --secondary-foreground: #6129C7;
+  --muted: #F6FAFC;
+  --muted-foreground: #637385;
+  --accent: #6129C7;
+  --accent-foreground: #FFFFFF;
+  --border: #DBE3ED;
+  --ring: #6129C7;
+  --radius: 14px;
+
+  --navy: #060F29;
+  --navy-dark: #03081A;
+  --indigo: #6129C7;
+  --indigo-light: #F3EFFC;
+  --purple: #6129C7;
+  --success: #1AA16B;
+  --warning: #F57A0F;
+  --danger: #E83340;
+
+  --font-inter: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-jetbrains: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+html, body, #root {
+  height: 100%;
+  font-family: var(--font-inter);
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+
+/* ── Micro-UX Interactive Transitions ───────────────────────────── */
+input, select, textarea {
+  transition: border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.18s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: #6129C7 !important;
+  box-shadow: 0 0 0 3px rgba(97, 41, 199, 0.12) !important;
+  outline: none !important;
+}
+
+button {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Custom smooth scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+/* Smooth selection color */
+::selection {
+  background: rgba(97, 41, 199, 0.18);
+  color: #121C2E;
+}
+
+/* ── Fundus Photography CSS Art ───────────────────────────────── */
+
+/* Shared vignette base for all fundus variants */
+.fundus-base {
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Level 0 — Normal retina. Rich amber/orange tones, clear disc, healthy macula */
+.fundus-normal {
+  background:
+    radial-gradient(ellipse 55% 50% at 62% 50%, #d4620a 0%, transparent 60%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #a83d06 0%, #6c1e02 45%, #2e0900 75%, #080100 100%);
+}
+
+/* Level 1 — Mild NPDR. Slightly darker, subtle vessel texture */
+.fundus-mild {
+  background:
+    radial-gradient(ellipse 50% 45% at 60% 50%, #c45608 0%, transparent 60%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #9c3404 0%, #621802 46%, #280800 76%, #060100 100%);
+}
+
+/* Level 2 — Moderate NPDR. Darker, more pronounced changes */
+.fundus-moderate {
+  background:
+    radial-gradient(ellipse 48% 42% at 58% 50%, #b04605 0%, transparent 58%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #8c2c03 0%, #541402 48%, #200600 78%, #040000 100%);
+}
+
+/* Level 3 — Severe NPDR. Very dark, significant vascular changes */
+.fundus-severe {
+  background:
+    radial-gradient(ellipse 44% 40% at 56% 50%, #9a3803 0%, transparent 55%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #7c2202 0%, #481002 50%, #180400 80%, #020000 100%);
+}
+
+/* Level 4 — Proliferative DR. Darkest, most compromised */
+.fundus-proliferative {
+  background:
+    radial-gradient(ellipse 40% 36% at 54% 50%, #882c02 0%, transparent 52%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #6c1c01 0%, #3c0c01 52%, #120300 82%, #010000 100%);
+}
+
+/* Grad-CAM overlay */
+.fundus-gradcam {
+  background:
+    radial-gradient(ellipse 48% 42% at 58% 50%, #b04605 0%, transparent 58%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #8c2c03 0%, #541402 48%, #200600 78%, #040000 100%);
+}
+
+/* Vessel segmentation */
+.fundus-vessels {
+  background: radial-gradient(ellipse 80% 80% at 50% 50%, #1c0800 0%, #0e0300 55%, #040100 80%, #000000 100%);
+}
+
+/* Poor quality */
+.fundus-poor {
+  background:
+    radial-gradient(ellipse 60% 55% at 48% 52%, #9a7040 0%, transparent 65%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #7a5028 0%, #523218 45%, #301808 72%, #100500 100%);
+  filter: blur(0.8px);
+}
+
+/* Enhanced (post-CLAHE) */
+.fundus-enhanced {
+  background:
+    radial-gradient(ellipse 52% 46% at 60% 50%, #e06810 0%, transparent 60%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #b44806 0%, #7a2604 44%, #361004 74%, #0c0200 100%);
+  filter: contrast(1.15) brightness(1.05);
+}
+
+/* The shared vessel line primitive */
+.vsl {
+  position: absolute;
+  height: 1.5px;
+  border-radius: 1px;
+  transform-origin: left center;
+  background: rgba(80, 14, 2, 0.65);
+}
+
+.fundus-vessels .vsl {
+  background: rgba(200, 70, 14, 0.85);
+}
+
+/* Pulsing dot for processing state */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.4); }
+}
+.pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
+
+/* Spin animation */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.9s linear infinite; }
+
+/* Fade in */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.fade-in { animation: fadeIn 0.35s ease both; }
+
+/* Progress bar fill animation */
+@keyframes fillBar { from { width: 0; } }
+.fill-bar { animation: fillBar 1s ease both; }
+
+/* Slide in from right */
+@keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+.slide-in-right { animation: slideInRight 0.4s ease both; }
+
+/* Analysis progress bar shimmer */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, #4F46E5 0%, #818CF8 40%, #4F46E5 80%);
+  background-size: 400px 100%;
+  animation: shimmer 1.8s linear infinite;
+}
+
+/* Radar scan ring */
+@keyframes radarPing {
+  0% { transform: scale(0.6); opacity: 0.7; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.radar-ring {
+  animation: radarPing 2s ease-out infinite;
+}
+.radar-ring-2 {
+  animation: radarPing 2s ease-out 0.7s infinite;
+}
+
+/* Pipeline connector pulse */
+@keyframes connPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+.conn-pulse { animation: connPulse 1.4s ease-in-out infinite; }
+
+/* Lesion dot blink */
+@keyframes lesionBlink {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.3); }
+}
+.lesion-active { animation: lesionBlink 2s ease-in-out infinite; }
+
+/* Quality arc fill */
+@keyframes arcFill { from { stroke-dashoffset: 339; } }
+
+/* Enhancement toggle */
+.enhancement-preview {
+  background:
+    radial-gradient(ellipse 52% 46% at 60% 50%, #e06810 0%, transparent 60%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #b44806 0%, #7a2604 44%, #361004 74%, #0c0200 100%);
+  filter: contrast(1.18) brightness(1.08) saturate(1.1);
+}
+
+/* Vessel segmentation map */
+.vessel-map {
+  background: #020408;
+}
+
+/* Optic disc map */
+.disc-map {
+  background: radial-gradient(ellipse at 50% 50%, #080210 0%, #020108 60%, #000000 100%);
+}
+
+/* Fovea map */
+.fovea-map {
+  background: radial-gradient(ellipse at 50% 50%, #0a0408 0%, #040208 60%, #000000 100%);
+}
+
+/* ── Print: clinical report only ───────────────────────────────── */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; }
+  .report-page > *:first-child { display: none !important; }
+  .report-page header { display: none !important; }
+  .report-page main {
+    padding: 0 !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+  .print-report {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    max-width: 100% !important;
+  }
+}

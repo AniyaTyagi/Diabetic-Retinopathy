@@ -1,0 +1,44 @@
+node_modules/
+dist/
+build/
+.cache/
+.env*
+!.env.example
+.vite/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+backend/netrax.db
+backend/netraq.db
+backend/test_smoke.db
+backend/uploads/
+!backend/uploads/.gitkeep
+
+# ML model weights (large; keep local only)
+backend/app/ml/weights/
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.h5
+*.pkl
+*.joblib
+
+*.egg-info/
+.pytest_cache/
+vite.config.*.timestamp-*
+*.tsbuildinfo
+*-debug.log*
+logs/
+*.log
+.claude-replay.*
+.tmp-*
+
+# Platform-managed agentplat state, not project source. In the
+# client-initiated single-repo workspace layout (make's `Path: "."` spec) the
+# repo root IS the workspace root, so these land inside this repo rather than
+# beside it.
+/.plugins/
+/.opencode-skills/

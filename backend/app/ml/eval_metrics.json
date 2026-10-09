@@ -1,0 +1,47 @@
+{
+  "status": "pending_user_metrics",
+  "dataset": "Team eval set — REPLACE when final numbers arrive",
+  "threshold_label": "Referable DR = Level 2+",
+  "note": "Leave status as pending_user_metrics until you paste final Acc/F1/Kappa/confusion. Interim notebook compare numbers used below for UI layout only.",
+  "headline": {
+    "accuracy": 0.4575,
+    "sensitivity": null,
+    "specificity": null,
+    "f1": 0.4463,
+    "quadratic_kappa": 0.6238,
+    "roc_auc": null,
+    "pr_auc": null,
+    "calibration": null
+  },
+  "models": [
+    {
+      "name": "CNN-DINOv2",
+      "accuracy": 0.4575,
+      "f1": 0.4463,
+      "quadratic_kappa": 0.6238,
+      "sensitivity": null,
+      "specificity": null,
+      "roc_auc": null,
+      "pr_auc": null,
+      "calibration": null,
+      "is_headline": true
+    },
+    {
+      "name": "QML-Hybrid",
+      "accuracy": 0.4475,
+      "f1": 0.4333,
+      "quadratic_kappa": 0.6636,
+      "sensitivity": null,
+      "specificity": null,
+      "roc_auc": null,
+      "pr_auc": null,
+      "calibration": null,
+      "is_headline": false
+    }
+  ],
+  "confusion": {"tn": 0, "fp": 0, "fn": 0, "tp": 0},
+  "class_distribution": [0, 0, 0, 0, 0],
+  "roc_points": "",
+  "pr_points": "",
+  "source": "QML notebook Cell 11 interim (replace soon)"
+}
