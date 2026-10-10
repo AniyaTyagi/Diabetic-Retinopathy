@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     secret_key: str = "dev-netrax-secret-change-me"
     access_token_expire_minutes: int = 480
     database_url: str = "sqlite:///./netrax.db"
-    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    cors_origins: str = "https://netrax-indol.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
     algorithm: str = "HS256"
 
     @property
