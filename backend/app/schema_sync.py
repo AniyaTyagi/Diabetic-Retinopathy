@@ -11,6 +11,7 @@ _PATIENT_COLUMNS = [
     ("latest_confidence", "DOUBLE PRECISION"),
     ("queue_status", "VARCHAR(64)"),
     ("thumb_variant", "VARCHAR(64)"),
+    ("consent_obtained", "BOOLEAN DEFAULT TRUE"),
 ]
 
 _SCREENING_COLUMNS = [
@@ -22,6 +23,13 @@ _SCREENING_COLUMNS = [
     ("follow_up_date", "VARCHAR(64)"),
     ("follow_up_center", "VARCHAR(255)"),
     ("follow_up_notes", "TEXT"),
+    # Reviewer audit trail (added v0.3)
+    ("reviewed_by", "VARCHAR(255)"),
+    ("reviewed_at", "TIMESTAMP"),
+    ("review_notes", "TEXT"),
+    ("reviewer_override", "BOOLEAN DEFAULT FALSE"),
+    ("clinician_dr_level", "INTEGER"),
+    ("clinician_decision", "VARCHAR(64)"),
 ]
 
 _REPORT_COLUMNS = [
@@ -35,6 +43,11 @@ def _add_columns_pg(conn, table: str, columns: list[tuple[str, str]]) -> None:
 
 
 def _add_columns_sqlite(conn, table: str, columns: list[tuple[str, str]]) -> None:
+    tbl_exists = conn.execute(
+        text(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'")
+    ).fetchone()
+    if not tbl_exists:
+        return
     existing = {
         row[1] for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
     }

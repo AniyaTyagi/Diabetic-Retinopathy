@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api import (
     analytics,
     auth,
+    automation,
     centers,
     devices,
     health,
@@ -23,6 +24,7 @@ api_router.include_router(patients.router)
 api_router.include_router(screenings.router)
 api_router.include_router(reports.router)
 api_router.include_router(analytics.router)
+api_router.include_router(automation.router)
 api_router.include_router(simulation.router)
 api_router.include_router(operations.router)
 api_router.include_router(settings.router)

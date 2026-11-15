@@ -57,6 +57,7 @@ class PatientCreate(BaseModel):
     diabetes_duration_years: int | None = None
     previous_dr: str | None = None
     notes: str | None = None
+    consent_obtained: bool = True
 
 
 class PatientUpdate(BaseModel):
@@ -69,6 +70,7 @@ class PatientUpdate(BaseModel):
     diabetes_duration_years: int | None = None
     previous_dr: str | None = None
     notes: str | None = None
+    consent_obtained: bool = True
 
 
 class PatientOut(BaseModel):
@@ -90,6 +92,7 @@ class PatientOut(BaseModel):
     latest_confidence: float | None = None
     queue_status: str | None = None
     thumb_variant: str | None = None
+    consent_obtained: bool = True
     created_at: datetime
 
 
@@ -124,6 +127,12 @@ class ScreeningOut(BaseModel):
     model_used: str | None
     review_status: str
     referral_needed: bool
+    clinician_dr_level: int | None = None
+    clinician_decision: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    review_notes: str | None = None
+    reviewer_override: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -197,6 +206,12 @@ class ResultsOut(BaseModel):
     follow_up_date: str | None = None
     follow_up_center: str | None = None
     follow_up_notes: str | None = None
+    clinician_dr_level: int | None = None
+    clinician_decision: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    review_notes: str | None = None
+    reviewer_override: bool = False
 
 
 class FollowUpIn(BaseModel):
@@ -210,6 +225,33 @@ class FollowUpOut(BaseModel):
     follow_up_date: str | None
     follow_up_center: str | None
     follow_up_notes: str | None
+
+
+class ReviewIn(BaseModel):
+    """Clinician review submission.
+    Preserves original AI prediction; records clinician decision separately.
+    """
+    review_notes: str | None = None
+    clinician_dr_level: int | None = None  # Clinician assessed grade (0-4)
+    clinician_decision: str = "confirm"     # "confirm" | "modify" | "recapture" | "refer"
+    reviewer_override: bool = False        # True if clinician modified the AI grade/decision
+    reviewer_dr_level: int | None = None   # Back-compat alias for clinician_dr_level
+
+
+class ReviewOut(BaseModel):
+    screening_id: str
+    review_status: str
+    reviewed_by: str | None
+    reviewed_at: datetime | None
+    review_notes: str | None
+    reviewer_override: bool
+    clinician_dr_level: int | None = None
+    clinician_decision: str | None = None
+    ai_dr_level: int | None = None
+    dr_level: int | None = None
+    confidence: float | None
+    model_used: str | None
+    referral_needed: bool = False
 
 
 # ── Reports / Analytics ───────────────────────────────────────────────────────
@@ -448,3 +490,19 @@ class PlatformSettingsUpdate(BaseModel):
     report_blurb: str | None = None
     security_blurb: str | None = None
     sections: list[str] | None = None
+
+
+# ── Automation (n8n) ──────────────────────────────────────────────────────────
+class AutomationLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_type: str
+    screening_id: str | None = None
+    patient_id: str | None = None
+    payload_json: str
+    status: str
+    response_code: int | None = None
+    response_body: str | None = None
+    retry_count: int = 0
+    created_at: datetime

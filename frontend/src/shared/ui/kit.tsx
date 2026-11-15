@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { C, DR } from "@/shared/tokens";
 import { useAuth } from "@/shared/auth/AuthContext";
 import { useOnlineStatus } from "@/shared/hooks/useOnlineStatus";
+import { useI18n } from "@/shared/i18n/I18nContext";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const SvgIcon = ({ d, size = 18, stroke = "currentColor", sw = 1.75 }: { d: string | string[]; size?: number; stroke?: string; sw?: number }) => (
@@ -407,6 +408,7 @@ export function Sidebar({ active, onSelect }: { active: NavKey; onSelect: (k: Na
 // ─── Top Header ───────────────────────────────────────────────────────────────
 function ConnectionBadge() {
   const online = useOnlineStatus();
+  const { t } = useI18n();
   const bg = online ? C.successLight : C.dangerLight;
   const fg = online ? C.success : C.danger;
   return (
@@ -415,8 +417,44 @@ function ConnectionBadge() {
       style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 99, background: bg }}
     >
       <span style={{ width: 7, height: 7, borderRadius: "50%", background: fg }} />
-      <span style={{ fontSize: 12, fontWeight: 600, color: fg }}>{online ? "Online" : "Offline"}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, color: fg }}>{online ? t("status.online", "Online") : t("status.offline", "Offline")}</span>
     </div>
+  );
+}
+
+export function LanguageSwitcher() {
+  const { lang, setLang } = useI18n();
+  return (
+    <button
+      type="button"
+      onClick={() => setLang(lang === "en" ? "hi" : "en")}
+      title={lang === "en" ? "हिंदी में बदलें (Switch to Hindi)" : "Switch to English"}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "5px 10px",
+        borderRadius: 8,
+        border: `1px solid ${C.slate200}`,
+        background: C.white,
+        color: C.slate700,
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: "pointer",
+        transition: "all 0.15s ease",
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLElement).style.borderColor = C.indigo;
+        (e.currentTarget as HTMLElement).style.color = C.indigo;
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.borderColor = C.slate200;
+        (e.currentTarget as HTMLElement).style.color = C.slate700;
+      }}
+    >
+      <span style={{ fontSize: 13, lineHeight: "1" }}>🌐</span>
+      <span>{lang === "en" ? "हिंदी" : "EN"}</span>
+    </button>
   );
 }
 
@@ -424,6 +462,7 @@ export function Header({ title, breadcrumbs, actions }: {
   title: string; breadcrumbs?: string[]; actions?: ReactNode;
 }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   return (
     <header style={{
       height:68, display:"flex", alignItems:"center", padding:"0 28px",
@@ -434,7 +473,7 @@ export function Header({ title, breadcrumbs, actions }: {
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <h1 style={{ fontSize:18, fontWeight:700, color:C.textPrimary, lineHeight:1.2 }}>{title}</h1>
           <span style={{ fontSize:12, color:C.slate500, fontWeight:400 }}>•</span>
-          <span style={{ fontSize:12, color:C.slate500, fontWeight:500 }}>PHC Kothapally</span>
+          <span style={{ fontSize:12, color:C.slate500, fontWeight:500 }}>{t("header.center", "PHC Kothapally")}</span>
         </div>
         {breadcrumbs && breadcrumbs.length > 0 && (
           <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:2 }}>
@@ -453,13 +492,15 @@ export function Header({ title, breadcrumbs, actions }: {
 
       {actions}
 
+      <LanguageSwitcher />
+
       <ConnectionBadge />
 
       {/* Search */}
       <div style={{ position:"relative", display:"flex", alignItems:"center" }} className="no-print">
         <span style={{ position:"absolute", left:12, color:C.slate400, display:"flex" }}><Ico.Search /></span>
         <input
-          placeholder="Search patient ID or name"
+          placeholder={t("header.search", "Search patient ID or name")}
           defaultValue=""
           onKeyDown={e => {
             if (e.key === "Enter") {

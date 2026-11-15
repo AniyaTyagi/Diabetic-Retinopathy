@@ -128,10 +128,18 @@ def get_snapshot_default(key: str) -> dict | None:
 
 
 def ensure_platform_defaults(db: Session) -> None:
-    """Insert missing analytics snapshots, app settings, and default demo user."""
+    """Insert missing analytics snapshots, app settings, and default demo user.
+
+    Demo users (password: netrax123) are ONLY created in non-production environments.
+    In production (APP_ENV=production), no demo credentials are auto-seeded.
+    """
+    from app.config import get_settings
     from app.models import User
     from app.roles import ROLE_ADMIN, ROLE_OPERATOR, ROLE_OPHTHALMOLOGIST, ROLE_REVIEWER
     from app.services.auth import hash_password
+
+    settings = get_settings()
+    is_production = settings.app_env == "production"
 
     demo_users = [
         {
@@ -164,19 +172,21 @@ def ensure_platform_defaults(db: Session) -> None:
         },
     ]
 
-    for u in demo_users:
-        existing = db.query(User).filter(User.email == u["email"]).first()
-        if not existing:
-            db.add(
-                User(
-                    email=u["email"],
-                    full_name=u["full_name"],
-                    role=u["role"],
-                    center=u["center"],
-                    hashed_password=hash_password(u["password"]),
-                    is_active=True,
+    if not is_production:
+        # Only seed demo credentials in development/staging environments
+        for u in demo_users:
+            existing = db.query(User).filter(User.email == u["email"]).first()
+            if not existing:
+                db.add(
+                    User(
+                        email=u["email"],
+                        full_name=u["full_name"],
+                        role=u["role"],
+                        center=u["center"],
+                        hashed_password=hash_password(u["password"]),
+                        is_active=True,
+                    )
                 )
-            )
 
     for key, payload in SNAPSHOT_DEFAULTS.items():
         exists = db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.key == key).first()
@@ -188,4 +198,5 @@ def ensure_platform_defaults(db: Session) -> None:
         db.add(AppSetting(key="platform", value=json.dumps(APP_SETTINGS_DEFAULT)))
 
     db.commit()
+
 

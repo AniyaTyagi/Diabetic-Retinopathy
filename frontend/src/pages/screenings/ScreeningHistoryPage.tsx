@@ -21,17 +21,25 @@ function ScreeningHistoryScreen({ onNav, onOpenScreening }: {
   const [q, setQ] = useState("");
   const [model, setModel] = useState("All");
   const [status, setStatus] = useState("All");
+  const [levelFilter, setLevelFilter] = useState("All");
+  const [page, setPage] = useState(1);
+  const pageSize = 15;
   const { data: screenings, loading, error } = useApiData(listScreenings, []);
 
-  const rows = screenings.filter(s => {
+  const filtered = screenings.filter(s => {
     const mq = !q
       || s.patient_id.toLowerCase().includes(q.toLowerCase())
       || s.screening_id.toLowerCase().includes(q.toLowerCase())
       || s.center.toLowerCase().includes(q.toLowerCase());
     const mm = model === "All" || s.model_used === model;
     const ms = status === "All" || s.review_status === status;
-    return mq && mm && ms;
+    const ml = levelFilter === "All" || String(s.dr_level) === levelFilter;
+    return mq && mm && ms && ml;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
@@ -62,18 +70,27 @@ function ScreeningHistoryScreen({ onNav, onOpenScreening }: {
               />
             </div>
 
-            <select value={model} onChange={e => setModel(e.target.value)}
+            <select value={model} onChange={e => { setModel(e.target.value); setPage(1); }}
               style={{ padding: "8px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontWeight: 600, color: C.textPrimary, background: C.white }}>
               <option value="All">Model: All</option>
               <option>SVM</option>
               <option>VQC</option>
               <option>QSVM</option>
             </select>
-            <select value={status} onChange={e => setStatus(e.target.value)}
+            <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}
               style={{ padding: "8px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontWeight: 600, color: C.textPrimary, background: C.white }}>
               <option value="All">Status: All</option>
               <option value="completed">Completed</option>
               <option value="pending">Pending</option>
+            </select>
+            <select value={levelFilter} onChange={e => { setLevelFilter(e.target.value); setPage(1); }}
+              style={{ padding: "8px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontWeight: 600, color: C.textPrimary, background: C.white }}>
+              <option value="All">DR Level: All</option>
+              <option value="0">Level 0 (No DR)</option>
+              <option value="1">Level 1 (Mild)</option>
+              <option value="2">Level 2 (Moderate)</option>
+              <option value="3">Level 3 (Severe)</option>
+              <option value="4">Level 4 (PDR)</option>
             </select>
           </div>
 
@@ -125,6 +142,58 @@ function ScreeningHistoryScreen({ onNav, onOpenScreening }: {
                 <div style={{ padding: 16, fontSize: 13, color: C.slate500 }}>No screenings found.</div>
               )}
             </div>
+
+            {totalPages > 1 && (
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: 16,
+                paddingTop: 12,
+                borderTop: `1px solid ${C.borderLight}`,
+              }}>
+                <span style={{ fontSize: 12, color: C.slate500 }}>
+                  Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} screenings
+                </span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: `1px solid ${C.border}`,
+                      background: currentPage <= 1 ? C.slate100 : C.white,
+                      color: currentPage <= 1 ? C.slate400 : C.textPrimary,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Previous
+                  </button>
+                  <span style={{ padding: "6px 10px", fontSize: 12, fontWeight: 700, color: C.indigo }}>
+                    {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: `1px solid ${C.border}`,
+                      background: currentPage >= totalPages ? C.slate100 : C.white,
+                      color: currentPage >= totalPages ? C.slate400 : C.textPrimary,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: currentPage >= totalPages ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </Card>
         </main>
       </div>

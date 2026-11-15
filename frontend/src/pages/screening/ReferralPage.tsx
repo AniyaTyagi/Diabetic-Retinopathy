@@ -171,9 +171,25 @@ function ReferralFollowUpScreen({
                 <div style={{
                   marginTop:14, padding:"12px 16px", borderRadius:10, background: result?.referral_needed ? C.dangerLight : C.successLight, border:`1px solid ${(result?.referral_needed ? C.danger : C.success)}30`,
                 }}>
-                  <div style={{ fontSize:11, fontWeight:600, color: result?.referral_needed ? C.danger : C.success }}>Clinical Status</div>
-                  <div style={{ fontSize:18, fontWeight:800, color: result?.referral_needed ? C.danger : C.success, marginTop:2 }}>
-                    {result?.referral_needed ? "Referable DR" : "Not referable"}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontSize:11, fontWeight:600, color: result?.referral_needed ? C.danger : C.success }}>Clinical Status</div>
+                      <div style={{ fontSize:18, fontWeight:800, color: result?.referral_needed ? C.danger : C.success, marginTop:2 }}>
+                        {result?.referral_needed ? "Referable DR" : "Not referable"}
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: "4px 10px",
+                      borderRadius: 99,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                      background: level >= 3 ? C.danger : level === 2 ? C.warning : C.success,
+                      color: C.white,
+                    }}>
+                      {level >= 3 ? "Urgent Priority" : level === 2 ? "Routine Priority" : "Standard"}
+                    </span>
                   </div>
                 </div>
                 <div style={{ marginTop:16 }}>

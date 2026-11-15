@@ -38,6 +38,7 @@ class Patient(Base):
     latest_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     queue_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     thumb_variant: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    consent_obtained: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     screenings: Mapped[list["Screening"]] = relationship(back_populates="patient")
@@ -71,6 +72,13 @@ class Screening(Base):
     structure_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Clinician review audit trail (separate from AI prediction dr_level)
+    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewer_override: Mapped[bool] = mapped_column(Boolean, default=False)
+    clinician_dr_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    clinician_decision: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     patient: Mapped["Patient"] = relationship(back_populates="screenings")
 
@@ -172,3 +180,21 @@ class AppSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class AutomationLog(Base):
+    """Audit log of outbound n8n webhooks, delivery results, and retries."""
+
+    __tablename__ = "automation_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    screening_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    patient_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="pending")  # pending, delivered, failed, skipped
+    response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+

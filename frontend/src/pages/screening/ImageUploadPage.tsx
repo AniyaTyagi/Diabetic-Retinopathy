@@ -11,6 +11,49 @@ import {
 } from "@/shared/ui";
 import { useEffect, useRef, useState } from "react";
 
+// ─── Low-bandwidth image compression ─────────────────────────────────────────
+const MAX_SIDE_PX = 1800;
+const JPEG_QUALITY = 0.85;
+const COMPRESS_THRESHOLD_BYTES = 1.5 * 1024 * 1024; // 1.5 MB
+
+async function compressIfNeeded(file: File): Promise<File> {
+  if (file.size <= COMPRESS_THRESHOLD_BYTES) return file;
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > MAX_SIDE_PX || height > MAX_SIDE_PX) {
+        const scale = Math.min(MAX_SIDE_PX / width, MAX_SIDE_PX / height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { resolve(file); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        blob => {
+          if (!blob) { resolve(file); return; }
+          const compressed = new File(
+            [blob],
+            file.name.replace(/\.[^.]+$/, "") + "_compressed.jpg",
+            { type: "image/jpeg", lastModified: Date.now() }
+          );
+          resolve(compressed);
+        },
+        "image/jpeg",
+        JPEG_QUALITY
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Failed to load image for compression")); };
+    img.src = url;
+  });
+}
+
 function UploadCard({
   eye,
   file,
@@ -133,6 +176,7 @@ function ImageUploadScreen({ onNav }: { onNav: (k: NavKey) => void }) {
   const [odFile, setOdFile] = useState<File | null>(null);
   const [osFile, setOsFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const odInput = useRef<HTMLInputElement>(null);
   const osInput = useRef<HTMLInputElement>(null);
@@ -141,26 +185,45 @@ function ImageUploadScreen({ onNav }: { onNav: (k: NavKey) => void }) {
   const osPreview = useObjectUrl(osFile);
 
   const STEPS = ["Patient Info", "Image Upload", "Quality Check", "AI Analysis", "Results"];
-  const bothReady = !!odFile && !!osFile;
+  // Allow single-eye upload — at least one eye is required
+  const atLeastOne = !!odFile || !!osFile;
 
   async function continueNext() {
     if (!screeningId) {
       setError("No active screening — start from Patient Info.");
       return;
     }
-    if (!odFile || !osFile) {
-      setError("Upload both OD and OS fundus images to continue.");
+    if (!odFile && !osFile) {
+      setError("Upload at least one fundus image (OD or OS) to continue.");
       return;
     }
     setBusy(true);
     setError(null);
+    setUploadProgress("Preparing images…");
     try {
-      await uploadScreeningImages(screeningId, { od: odFile, os: osFile });
+      // Compress large images for low-bandwidth connections
+      let compressedOd: File | null = null;
+      let compressedOs: File | null = null;
+      if (odFile) {
+        setUploadProgress("Optimising right eye (OD) image…");
+        compressedOd = await compressIfNeeded(odFile);
+      }
+      if (osFile) {
+        setUploadProgress("Optimising left eye (OS) image…");
+        compressedOs = await compressIfNeeded(osFile);
+      }
+      setUploadProgress("Uploading…");
+      await uploadScreeningImages(screeningId, {
+        od: compressedOd ?? undefined,
+        os: compressedOs ?? undefined,
+      });
       navigate(screeningPath("/screening/quality", screeningId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(err instanceof Error ? err.message : "Upload failed. Check your connection and retry.");
+      setUploadProgress(null);
     } finally {
       setBusy(false);
+      setUploadProgress(null);
     }
   }
 
@@ -191,7 +254,26 @@ function ImageUploadScreen({ onNav }: { onNav: (k: NavKey) => void }) {
         </div>
 
         <main style={{ flex: 1, overflowY: "auto", padding: 28, background: C.bg }}>
-          {(error || ctxError) && <div style={{ marginBottom: 12, fontSize: 12, color: C.danger }}>{error || ctxError}</div>}
+          {(error || ctxError) && (
+            <div style={{ marginBottom: 12, fontSize: 12, color: C.danger, display: "flex", alignItems: "center", gap: 8 }}>
+              <span>{error || ctxError}</span>
+              {error && (
+                <button
+                  type="button"
+                  onClick={() => { setError(null); void continueNext(); }}
+                  style={{ padding: "3px 10px", fontSize: 11, fontWeight: 600, borderRadius: 7, border: `1px solid ${C.danger}`, background: "transparent", color: C.danger, cursor: "pointer" }}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
+          {uploadProgress && (
+            <div style={{ marginBottom: 12, fontSize: 12, color: C.indigo, display: "flex", alignItems: "center", gap: 8 }}>
+              <Ico.Loader />
+              <span>{uploadProgress}</span>
+            </div>
+          )}
           <PatientContextBar patient={patient} result={result} screeningId={screeningId} badge="processing" pulse />
 
           <input ref={odInput} type="file" accept="image/*" hidden onChange={e => {
@@ -223,10 +305,10 @@ function ImageUploadScreen({ onNav }: { onNav: (k: NavKey) => void }) {
           <Card title="Capture Guidelines" style={{ marginBottom: 20 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginTop: 8 }}>
               {[
-                { icon: <Ico.Scan />, title: "Focus Well", desc: "Ensure sharp focus on the optic disc and macula", ok: bothReady },
-                { icon: <Ico.Zap />, title: "Proper Illumination", desc: "Even, adequate retinal illumination without glare", ok: bothReady },
-                { icon: <Ico.Layers />, title: "Full Field of View", desc: "Capture 45° or wider retinal field centered on disc", ok: bothReady },
-                { icon: <Ico.Eye />, title: "Avoid Reflections", desc: "Minimize corneal and lens artefact reflections", ok: bothReady },
+                { icon: <Ico.Scan />, title: "Focus Well", desc: "Ensure sharp focus on the optic disc and macula", ok: atLeastOne },
+                { icon: <Ico.Zap />, title: "Proper Illumination", desc: "Even, adequate retinal illumination without glare", ok: atLeastOne },
+                { icon: <Ico.Layers />, title: "Full Field of View", desc: "Capture 45° or wider retinal field centered on disc", ok: atLeastOne },
+                { icon: <Ico.Eye />, title: "Avoid Reflections", desc: "Minimize corneal and lens artefact reflections", ok: atLeastOne },
               ].map(g => (
                 <div key={g.title} style={{
                   padding: 14, borderRadius: 12, background: g.ok ? C.successLight + "80" : C.bg,
@@ -250,10 +332,10 @@ function ImageUploadScreen({ onNav }: { onNav: (k: NavKey) => void }) {
             <ActionButton
               variant="primary"
               onClick={() => void continueNext()}
-              disabled={!bothReady || busy || !screeningId}
+              disabled={!atLeastOne || busy || !screeningId}
               icon={<Ico.ArrowR />}
             >
-              {busy ? "Uploading…" : "Continue to Quality Check"}
+              {busy ? (uploadProgress ?? "Uploading…") : "Continue to Quality Check"}
             </ActionButton>
           </div>
         </main>

@@ -43,6 +43,12 @@ export type ScreeningResults = {
   step: string;
   status: string;
   report_id: string | null;
+  clinician_dr_level?: number | null;
+  clinician_decision?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  review_notes?: string | null;
+  reviewer_override?: boolean;
   has_od_image?: boolean;
   has_os_image?: boolean;
   per_eye?: {
@@ -225,6 +231,39 @@ export async function scheduleFollowUp(
   follow_up_notes: string | null;
 }> {
   return apiFetch(`/api/screenings/${encodeURIComponent(screeningId)}/follow-up`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export type ReviewIn = {
+  review_notes?: string | null;
+  clinician_dr_level?: number | null;
+  clinician_decision?: string; // "confirm" | "modify" | "recapture" | "refer"
+  reviewer_override?: boolean;
+};
+
+export type ReviewOut = {
+  screening_id: string;
+  review_status: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
+  reviewer_override: boolean;
+  clinician_dr_level?: number | null;
+  clinician_decision?: string | null;
+  ai_dr_level?: number | null;
+  dr_level: number | null;
+  confidence: number | null;
+  model_used: string | null;
+  referral_needed: boolean;
+};
+
+export async function submitReview(
+  screeningId: string,
+  payload: ReviewIn,
+): Promise<ReviewOut> {
+  return apiFetch<ReviewOut>(`/api/screenings/${encodeURIComponent(screeningId)}/review`, {
     method: "POST",
     body: JSON.stringify(payload),
   });

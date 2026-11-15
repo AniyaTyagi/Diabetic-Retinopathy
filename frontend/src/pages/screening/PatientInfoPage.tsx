@@ -69,6 +69,7 @@ function PatientInfoScreen({ onNav }: { onNav: (k: NavKey) => void }) {
   const [activeNav, setActiveNav] = useState<NavKey>("new-screening");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [consentObtained, setConsentObtained] = useState(true);
   const [form, setForm] = useState({
     patientId: "",
     fullName: "",
@@ -115,6 +116,10 @@ function PatientInfoScreen({ onNav }: { onNav: (k: NavKey) => void }) {
       setError("Patient ID, full name, and age are required.");
       return;
     }
+    if (!consentObtained) {
+      setError("Informed patient consent must be obtained before initiating AI screening.");
+      return;
+    }
     setSaving(true);
     try {
       const patient = await upsertPatient({
@@ -128,6 +133,7 @@ function PatientInfoScreen({ onNav }: { onNav: (k: NavKey) => void }) {
         diabetes_duration_years: form.diabetesDuration ? Number(form.diabetesDuration) : null,
         previous_dr: form.previousDR === "No previous history" ? null : form.previousDR,
         notes: form.notes.trim() || null,
+        consent_obtained: consentObtained,
       });
       const screening = await createScreening({
         patient_id: patient.patient_id,
@@ -236,6 +242,31 @@ function PatientInfoScreen({ onNav }: { onNav: (k: NavKey) => void }) {
                     rows={3}
                     style={{ ...FIELD_INPUT_STYLE, resize: "none" }}
                   />
+                </div>
+                <div style={{
+                  gridColumn: "span 2",
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: consentObtained ? "rgba(16, 185, 129, 0.08)" : "rgba(239, 68, 68, 0.08)",
+                  border: `1px solid ${consentObtained ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  cursor: "pointer",
+                }} onClick={() => setConsentObtained(!consentObtained)}>
+                  <input
+                    type="checkbox"
+                    id="consentCheck"
+                    checked={consentObtained}
+                    onChange={e => setConsentObtained(e.target.checked)}
+                    style={{ marginTop: 2, cursor: "pointer", width: 16, height: 16, accentColor: C.indigo }}
+                  />
+                  <label htmlFor="consentCheck" style={{ fontSize: 12, color: C.textPrimary, cursor: "pointer", lineHeight: 1.4 }}>
+                    <span style={{ fontWeight: 700 }}>Informed Consent Obtained</span>
+                    <span style={{ display: "block", fontSize: 11, color: C.slate500, marginTop: 2 }}>
+                      Patient has received explanation and consented to retinal imaging, automated triage analysis, and follow-up data handling.
+                    </span>
+                  </label>
                 </div>
               </div>
 

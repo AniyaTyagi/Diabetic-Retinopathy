@@ -13,17 +13,17 @@ export function isRole(value: string | null | undefined): value is Role {
   return !!value && (ROLES as readonly string[]).includes(value);
 }
 
-/** Sidebar nav keys allowed per role */
+/** Sidebar nav keys allowed per role strictly for designated tasks */
 export const NAV_ACCESS: Record<Role, NavKey[]> = {
   "Screening Operator": ["dashboard", "new-screening", "patients", "screenings", "reports", "devices", "settings"],
-  Ophthalmologist: ["dashboard", "patients", "screenings", "reports", "analytics", "settings"],
-  Reviewer: ["dashboard", "patients", "screenings", "reports", "analytics", "settings"],
+  Ophthalmologist: ["dashboard", "screenings", "patients", "reports", "analytics", "settings"],
+  Reviewer: ["dashboard", "screenings", "patients", "reports", "settings"],
   Administrator: ["dashboard", "analytics", "centers", "devices", "users", "settings"],
 };
 
 /**
- * Route path → allowed roles (Step 6 screen matrix).
- * Paths not listed require auth but any role (fallback deny via explicit list preferred).
+ * Route path → allowed roles strictly limited to designated tasks.
+ * Unauthorized access is denied and redirected.
  */
 export const PATH_ACCESS: Record<string, Role[]> = {
   "/dashboard": [...ROLES],
@@ -33,33 +33,44 @@ export const PATH_ACCESS: Record<string, Role[]> = {
   "/system/errors": [...ROLES],
   "/system/empty": [...ROLES],
 
+  // Operator-only clinical acquisition tasks
   "/screening/new": ["Screening Operator"],
   "/screening/upload": ["Screening Operator"],
   "/screening/workflow": ["Screening Operator"],
-  "/screening/quality": ["Screening Operator", "Reviewer", "Ophthalmologist"],
+  "/screening/quality": ["Screening Operator"],
   "/screening/enhancement": ["Screening Operator"],
-  "/screening/ai-analysis": ["Screening Operator", "Ophthalmologist", "Reviewer"],
-  "/screening/structure": ["Screening Operator", "Ophthalmologist", "Reviewer"],
-  "/screening/lesions": ["Screening Operator", "Ophthalmologist", "Reviewer"],
+  "/screening/ai-analysis": ["Screening Operator"],
+
+  // Screening Results viewing (Operator, Reviewer, Ophthalmologist)
   "/screening/results": ["Screening Operator", "Ophthalmologist", "Reviewer"],
-  "/screening/gradcam": ["Screening Operator", "Ophthalmologist", "Reviewer"],
-  "/screening/lesion-evidence": ["Screening Operator", "Ophthalmologist", "Reviewer"],
-  "/screening/model-compare": ["Screening Operator", "Ophthalmologist", "Reviewer"],
+
+  // Advanced Explainability & Model Comparison (Specialists only)
+  "/screening/gradcam": ["Ophthalmologist", "Reviewer"],
+  "/screening/grad-cam": ["Ophthalmologist", "Reviewer"],
+  "/screening/model-compare": ["Ophthalmologist", "Reviewer"],
   "/screening/evidence-summary": ["Ophthalmologist", "Reviewer"],
+
+  // Clinical Review & Verification (Specialists only — Operator and Admin forbidden)
   "/screening/review": ["Ophthalmologist", "Reviewer"],
+
+  // Referral Triage & Care Planning (Senior Ophthalmologist only)
   "/screening/referral": ["Ophthalmologist"],
 
+  // Reports
   "/reports": ["Screening Operator", "Ophthalmologist", "Reviewer", "Administrator"],
-  "/reports/clinical": ["Screening Operator", "Ophthalmologist", "Reviewer"],
+  "/reports/clinical": ["Ophthalmologist", "Reviewer"],
 
+  // Patient & Screening History
   "/patients": ["Screening Operator", "Ophthalmologist", "Reviewer"],
   "/patients/profile": ["Screening Operator", "Ophthalmologist", "Reviewer"],
   "/screenings": ["Screening Operator", "Ophthalmologist", "Reviewer"],
 
-  "/analytics": ["Ophthalmologist", "Administrator", "Reviewer"],
-  "/analytics/models": ["Administrator", "Ophthalmologist"],
-  "/analytics/quality": ["Administrator", "Reviewer", "Ophthalmologist"],
+  // Analytics (Role-specific views)
+  "/analytics": ["Ophthalmologist", "Administrator"],
+  "/analytics/models": ["Ophthalmologist", "Administrator"],
+  "/analytics/quality": ["Ophthalmologist", "Reviewer", "Administrator"],
 
+  // System Administration (Administrator only)
   "/simulation": ["Administrator"],
   "/simulation/resources": ["Administrator"],
   "/centers": ["Administrator"],

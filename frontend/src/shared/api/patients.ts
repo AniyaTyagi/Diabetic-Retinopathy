@@ -17,6 +17,7 @@ export type Patient = {
   latest_confidence: number | null;
   queue_status: string | null;
   thumb_variant: string | null;
+  consent_obtained?: boolean;
   created_at: string;
 };
 
@@ -43,6 +44,7 @@ export type PatientCreateInput = {
   diabetes_duration_years?: number | null;
   previous_dr?: string | null;
   notes?: string | null;
+  consent_obtained?: boolean;
 };
 
 export async function getNextPatientId(): Promise<string> {

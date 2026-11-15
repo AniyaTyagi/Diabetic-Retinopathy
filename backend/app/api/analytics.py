@@ -55,6 +55,9 @@ def summary(
     db: Session = Depends(get_db),
     _: User = Depends(_roles),
 ):
+    from datetime import date
+    today_str = date.today().strftime("%d %b %Y")
+
     all_rows = db.query(Screening).all()
     total = len(all_rows)
     referred = sum(
@@ -64,13 +67,14 @@ def summary(
     )
     pending = sum(1 for s in all_rows if s.review_status == "pending")
     ungradeable = sum(1 for s in all_rows if s.status == "ungradeable")
+    today = sum(1 for s in all_rows if s.screening_date == today_str)
     levels = Counter(str(s.dr_level) for s in all_rows if s.dr_level is not None)
     confs = [s.confidence for s in all_rows if s.confidence is not None]
     avg_conf = round(sum(confs) / len(confs), 2) if confs else None
 
     return AnalyticsSummary(
         total_screenings=total,
-        today_screenings=total,
+        today_screenings=today,
         referred=referred,
         pending_review=pending,
         ungradeable=ungradeable,
@@ -167,6 +171,14 @@ def model_performance(
         if not r.is_headline
     ]
 
+    from app.ml.cnn import cnn_enabled
+
+    snap_note = (
+        "No validated evaluation data available — model weights not loaded on current host."
+        if not cnn_enabled()
+        else "Using baseline benchmark snapshot (place team eval_metrics.json in app/ml/ for live eval)."
+    )
+
     return ModelPerformanceOut(
         dataset=snap.get("dataset", "NetraX Eval"),
         threshold_label=snap.get("threshold_label", "Referable = Level 2+"),
@@ -177,8 +189,8 @@ def model_performance(
         confusion=snap.get("confusion", {"tn": 0, "fp": 0, "fn": 0, "tp": 0}),
         class_distribution=snap.get("class_distribution", [0, 0, 0, 0, 0]),
         live_by_level=dict(live_levels),
-        status="legacy_snapshot",
-        note="Using legacy snapshot — prefer app/ml/eval_metrics.json",
+        status="unvalidated_baseline" if not cnn_enabled() else "legacy_snapshot",
+        note=snap_note,
         source="defaults/snapshot",
     )
 
@@ -191,8 +203,9 @@ def quality_analytics(
     snap = _snapshot(db, "quality_analytics")
     centers = db.query(Center).order_by(Center.id.asc()).all()
     devices = db.query(Device).order_by(Device.id.asc()).all()
+    screenings = db.query(Screening).all()
 
-    # Prefer live center/device averages when present; keep seeded chart series as fallback.
+    # Center & device quality
     live_center = [
         {"name": c.name, "quality": float(c.quality_score)} for c in centers
     ]
@@ -200,19 +213,84 @@ def quality_analytics(
         {"name": d.device_id, "quality": float(d.avg_quality)} for d in devices
     ]
 
-    qs = [s.quality_score for s in db.query(Screening).all() if s.quality_score is not None]
-    avg_q = round(sum(qs) / len(qs), 1) if qs else float(snap.get("avg_quality", 0))
+    screenings_with_quality = [s for s in screenings if s.quality_score is not None]
+    total_q = len(screenings_with_quality)
+
+    if total_q > 0:
+        qs = [s.quality_score for s in screenings_with_quality]
+        avg_q = round(sum(qs) / total_q, 1)
+        good_pct = round((sum(1 for q in qs if q >= 70) / total_q) * 100, 1)
+        ungradeable_pct = round(
+            (sum(1 for s in screenings if s.status == "ungradeable" or (s.quality_score is not None and s.quality_score < 40)) / len(screenings)) * 100,
+            1,
+        )
+        recapture_pct = round(
+            (sum(1 for s in screenings if s.status == "quality_poor" or (s.quality_score is not None and s.quality_score < 55)) / len(screenings)) * 100,
+            1,
+        )
+
+        # 5 bins: 0-20, 21-40, 41-60, 61-80, 81-100
+        dist = [0, 0, 0, 0, 0]
+        for q in qs:
+            bin_idx = min(int(q // 20), 4)
+            dist[bin_idx] += 1
+        score_distribution = dist
+
+        # Analyze actual failure reasons from quality_json
+        failure_counter: Counter = Counter()
+        for s in screenings_with_quality:
+            if s.quality_json:
+                try:
+                    q_data = json.loads(s.quality_json)
+                    for chk in q_data.get("checks", []):
+                        if not chk.get("passed"):
+                            failure_counter[chk.get("check", "Other")] += 1
+                except Exception:
+                    pass
+
+        if failure_counter:
+            total_fails = sum(failure_counter.values())
+            color_map = {
+                "Focus / Sharpness": "#EF4444",
+                "Sharpness & Focus": "#EF4444",
+                "Exposure / Glare": "#F59E0B",
+                "Exposure & Illumination": "#F59E0B",
+                "Contrast": "#6366F1",
+                "Retinal Contrast": "#6366F1",
+                "Resolution": "#10B981",
+                "Resolution & Sensor Coverage": "#10B981",
+            }
+            failures = [
+                QualityFailureOut(
+                    label=k,
+                    pct=round((v / total_fails) * 100, 1),
+                    color=color_map.get(k, "#64748B"),
+                )
+                for k, v in failure_counter.most_common(5)
+            ]
+        else:
+            failures = [
+                QualityFailureOut(label=f["label"], pct=float(f["pct"]), color=f.get("color", "#64748B"))
+                for f in snap.get("failures", [])
+            ]
+    else:
+        avg_q = float(snap.get("avg_quality", 0))
+        good_pct = float(snap.get("good_pct", 0))
+        ungradeable_pct = float(snap.get("ungradeable_pct", 0))
+        recapture_pct = float(snap.get("recapture_pct", 0))
+        score_distribution = list(snap.get("score_distribution", []))
+        failures = [
+            QualityFailureOut(label=f["label"], pct=float(f["pct"]), color=f.get("color", "#64748B"))
+            for f in snap.get("failures", [])
+        ]
 
     return QualityAnalyticsOut(
         avg_quality=avg_q,
-        good_pct=float(snap.get("good_pct", 0)),
-        ungradeable_pct=float(snap.get("ungradeable_pct", 0)),
-        recapture_pct=float(snap.get("recapture_pct", 0)),
-        score_distribution=list(snap.get("score_distribution", [])),
-        failures=[
-            QualityFailureOut(label=f["label"], pct=float(f["pct"]), color=f.get("color", "#64748B"))
-            for f in snap.get("failures", [])
-        ],
+        good_pct=good_pct,
+        ungradeable_pct=ungradeable_pct,
+        recapture_pct=recapture_pct,
+        score_distribution=score_distribution,
+        failures=failures,
         by_center=[int(c.quality_score) for c in centers] or list(snap.get("by_center", [])),
         center_labels=[c.name.replace("PHC ", "").replace("DH ", "")[:4] for c in centers]
         or list(snap.get("center_labels", [])),

@@ -36,13 +36,15 @@ def run_cnn(image_paths: list[str] | None = None) -> InferenceResult:
 
     if not cnn_mod.cnn_enabled():
         return InferenceResult(
-            dr_level=2,
-            confidence=0.91,
-            model_used="CNN-stub",
-            referral_needed=True,
+            dr_level=0,
+            confidence=0.0,
+            model_used="CNN-stub-NO-WEIGHTS",
+            referral_needed=False,
             details={
-                "note": "CNN disabled or model folder missing — stub result",
+                "warning": "CNN model weights not found — no inference performed.",
+                "note": "Place trained model files in app/models/weights/CNN/ to enable real inference.",
                 "model_dir": str(cnn_mod.cnn_model_dir()),
+                "is_stub": True,
             },
         )
 
@@ -82,11 +84,15 @@ def run_qml(image_paths: list[str] | None = None, features: dict | None = None) 
 
     if not qml_mod.qml_enabled():
         return InferenceResult(
-            dr_level=2,
-            confidence=0.93,
-            model_used="QML-stub",
-            referral_needed=True,
-            details={"note": "QML disabled or artifacts missing — stub result"},
+            dr_level=0,
+            confidence=0.0,
+            model_used="QML-stub-NO-WEIGHTS",
+            referral_needed=False,
+            details={
+                "warning": "QML artifacts not found — no inference performed.",
+                "note": "Place pca.pkl, scaler.pkl, and qmodel/ in app/models/weights/ to enable QML.",
+                "is_stub": True,
+            },
         )
 
     pred = qml_mod.predict_eyes(image_paths)

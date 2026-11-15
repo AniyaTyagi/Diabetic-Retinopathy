@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/shared/auth/AuthContext";
 import { useAppNav } from "@/shared/hooks/useAppNav";
 import { useApiData } from "@/shared/hooks/useApiData";
 import { useOnlineStatus } from "@/shared/hooks/useOnlineStatus";
@@ -25,6 +26,8 @@ function DashboardScreen({ onNav, onOpenResults }: {
   onNav: (k: NavKey) => void;
   onOpenResults: (screeningId: string) => void;
 }) {
+  const navigate = useNavigate();
+  const { role, user } = useAuth();
   const [activeNav, setActiveNav] = useState<NavKey>("dashboard");
   const handleNav = (k: NavKey) => { setActiveNav(k); onNav(k); };
   const { data: screenings, loading, error } = useApiData(listScreenings, []);
@@ -35,13 +38,52 @@ function DashboardScreen({ onNav, onOpenResults }: {
   const pendingCount = screenings.filter(s => s.review_status === "pending").length;
   const recent = screenings.slice(0, 5);
 
+  const dashboardTitle =
+    role === "Ophthalmologist" ? "Ophthalmologist Dashboard" :
+    role === "Reviewer" ? "Clinical Reviewer Dashboard" :
+    role === "Administrator" ? "System Administrator Dashboard" :
+    "Screening Operator Dashboard";
+
+  const roleHeadline =
+    role === "Ophthalmologist" ? "Specialist review & referral triage" :
+    role === "Reviewer" ? "Quality assurance & screening verification" :
+    role === "Administrator" ? "System health, clinic centers & user management" :
+    "Ready for today’s screenings?";
+
+  function handleHeroAction() {
+    if (role === "Screening Operator") {
+      handleNav("new-screening");
+    } else if (role === "Administrator") {
+      navigate("/users");
+    } else {
+      navigate("/screenings");
+    }
+  }
+
+  const heroMeta = {
+    title:
+      role === "Screening Operator" ? "New Screening" :
+      role === "Reviewer" ? "Review Queue" :
+      role === "Ophthalmologist" ? "Specialist Triage" :
+      "Manage Staff & Clinics",
+    sub:
+      role === "Screening Operator" ? "Start patient intake & photo upload" :
+      role === "Reviewer" ? `${pendingCount} screenings pending verification` :
+      role === "Ophthalmologist" ? `${referredCount} high-risk cases require attention` :
+      "Assign roles & configure centers",
+    icon:
+      role === "Screening Operator" ? <Ico.Plus /> :
+      role === "Administrator" ? <Ico.Users /> :
+      <Ico.Eye />,
+  };
+
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
       <Sidebar active={activeNav} onSelect={handleNav} />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <Header
-          title="Health Worker Dashboard"
-          breadcrumbs={["NetraX", "Health Worker Dashboard"]}
+          title={dashboardTitle}
+          breadcrumbs={["NetraX", dashboardTitle]}
         />
 
         <main style={{
@@ -50,13 +92,13 @@ function DashboardScreen({ onNav, onOpenResults }: {
         }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.success, marginBottom: 4 }}>
-              Good morning,
+              Good day, {user?.full_name || role || "User"}
             </div>
             <div style={{
               fontSize: 28, fontWeight: 800, color: C.textPrimary,
               letterSpacing: -0.5, lineHeight: 1.2,
             }}>
-              Ready for today’s screenings?
+              {roleHeadline}
             </div>
             {error && <div style={{ marginTop: 8, fontSize: 12, color: C.danger }}>{error}</div>}
             {loading && <div style={{ marginTop: 8, fontSize: 12, color: C.slate500 }}>Loading screenings…</div>}
@@ -64,7 +106,7 @@ function DashboardScreen({ onNav, onOpenResults }: {
 
           <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 14 }}>
             <div
-              onClick={() => handleNav("new-screening")}
+              onClick={handleHeroAction}
               style={{
                 background: C.navy,
                 borderRadius: 16,
@@ -87,10 +129,10 @@ function DashboardScreen({ onNav, onOpenResults }: {
             >
               <div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: C.white, letterSpacing: -0.3 }}>
-                  New Screening
+                  {heroMeta.title}
                 </div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", marginTop: 4 }}>
-                  Start patient assessment
+                  {heroMeta.sub}
                 </div>
               </div>
               <div style={{
@@ -99,7 +141,7 @@ function DashboardScreen({ onNav, onOpenResults }: {
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: C.white,
               }}>
-                <Ico.Plus />
+                {heroMeta.icon}
               </div>
             </div>
 

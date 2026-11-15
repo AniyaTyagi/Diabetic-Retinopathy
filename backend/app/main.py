@@ -34,6 +34,8 @@ def _warmup_ml() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    settings = get_settings()
+    settings.validate_production()
     Base.metadata.create_all(bind=engine)
     ensure_schema()
     db = SessionLocal()
@@ -56,8 +58,8 @@ def create_app() -> FastAPI:
     origins = settings.cors_origin_list
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins if origins else ["*"],
-        allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:\d+|http://127\.0\.0\.1:\d+",
+        allow_origins=origins if origins else ["https://netrax-indol.vercel.app", "http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origin_regex=r"^https:\/\/([a-zA-Z0-9-]+\.)?netrax(-[a-zA-Z0-9-]+)?\.vercel\.app$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

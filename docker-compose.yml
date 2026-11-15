@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: netrax-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - APP_ENV=production
+      - DATABASE_URL=sqlite:///./netrax.db
+      - SECRET_KEY=netrax-production-secret-key-32chars-min
+      - CORS_ORIGINS=http://localhost,http://localhost:5173,http://localhost:80
+      - NETRAX_CNN_ENABLED=0
+      - NETRAX_QML_ENABLED=0
+    volumes:
+      - ./uploads:/app/uploads
+      - netrax-data:/app
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: netrax-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  netrax-data:

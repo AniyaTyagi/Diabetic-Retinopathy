@@ -8,10 +8,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_roles
 from app.ml import DR_LABELS, analyze
 from app.ml.gradcam import generate_gradcam
 from app.models import Notification, Patient, Report, Screening, User
+from app.roles import ROLE_ADMIN, ROLE_OPERATOR, ROLE_OPHTHALMOLOGIST, ROLE_REVIEWER
+from app.services.n8n import dispatch_n8n_event
 from app.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -20,6 +22,8 @@ from app.schemas import (
     QualityAssessmentOut,
     QualityCheckOut,
     ResultsOut,
+    ReviewIn,
+    ReviewOut,
     ScreeningCreate,
     ScreeningListItem,
     ScreeningOut,
@@ -127,14 +131,20 @@ def _upsert_report(db: Session, screening: Screening) -> Report:
 
 
 def _sync_patient_from_screening(patient: Patient, screening: Screening) -> None:
-    patient.latest_dr_level = screening.dr_level
+    # Use clinician override if verified, otherwise original AI prediction
+    effective_level = (
+        screening.clinician_dr_level
+        if (screening.reviewer_override and screening.clinician_dr_level is not None)
+        else screening.dr_level
+    )
+    patient.latest_dr_level = effective_level
     patient.latest_confidence = screening.confidence
     patient.last_screening_date = screening.screening_date or datetime.utcnow().strftime("%d %b %Y")
     if screening.referral_needed:
         patient.queue_status = "referable"
-    elif screening.dr_level is not None:
+    elif effective_level is not None:
         patient.queue_status = {0: "normal", 1: "mild", 2: "referable", 3: "severe", 4: "pdr"}.get(
-            screening.dr_level, "pending"
+            effective_level, "pending"
         )
 
 
@@ -168,7 +178,7 @@ def list_screenings(
 def create_screening(
     body: ScreeningCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_roles(ROLE_OPERATOR, ROLE_ADMIN)),
 ):
     patient = db.query(Patient).filter(Patient.patient_id == body.patient_id).first()
     if not patient:
@@ -188,6 +198,19 @@ def create_screening(
         try:
             db.commit()
             db.refresh(screening)
+            dispatch_n8n_event(
+                db=db,
+                event_type="screening.created",
+                screening_id=screening.screening_id,
+                patient_id=patient.patient_id,
+                payload={
+                    "screening_id": screening.screening_id,
+                    "patient_id": patient.patient_id,
+                    "patient_name": patient.full_name,
+                    "center": screening.center,
+                    "screening_date": screening.screening_date,
+                },
+            )
             return screening
         except IntegrityError as e:
             last_err = e
@@ -241,7 +264,7 @@ def schedule_follow_up(
     screening_id: str,
     body: FollowUpIn,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_roles(ROLE_OPHTHALMOLOGIST, ROLE_ADMIN)),
 ):
     screening = db.query(Screening).filter(Screening.screening_id == screening_id).first()
     if not screening:
@@ -269,6 +292,20 @@ def schedule_follow_up(
     )
     db.commit()
     db.refresh(screening)
+    dispatch_n8n_event(
+        db=db,
+        event_type="follow_up.scheduled",
+        screening_id=screening.screening_id,
+        patient_id=patient.patient_id if patient else None,
+        payload={
+            "screening_id": screening.screening_id,
+            "patient_id": patient.patient_id if patient else None,
+            "patient_name": patient.full_name if patient else None,
+            "follow_up_date": date,
+            "follow_up_center": center,
+            "notes": screening.follow_up_notes,
+        },
+    )
     return FollowUpOut(
         screening_id=screening.screening_id,
         follow_up_date=screening.follow_up_date,
@@ -277,30 +314,197 @@ def schedule_follow_up(
     )
 
 
+_REVIEWER_ROLES = require_roles(ROLE_REVIEWER, ROLE_OPHTHALMOLOGIST)
+
+
+@router.post("/{screening_id}/review", response_model=ReviewOut)
+def submit_review(
+    screening_id: str,
+    body: ReviewIn,
+    db: Session = Depends(get_db),
+    reviewer: User = Depends(_REVIEWER_ROLES),
+):
+    """
+    Clinician review endpoint.
+    Only Reviewer / Ophthalmologist / Admin roles may submit.
+    Preserves original AI-predicted DR grade and stores clinician assessment separately.
+    Records reviewer identity, decision, override status, and timestamp for audit trail.
+    """
+    screening = db.query(Screening).filter(Screening.screening_id == screening_id).first()
+    if not screening:
+        raise HTTPException(status_code=404, detail="Screening not found")
+
+    if screening.dr_level is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot review a screening that has not been analyzed yet",
+        )
+
+    grade = body.clinician_dr_level if body.clinician_dr_level is not None else body.reviewer_dr_level
+    decision = (body.clinician_decision or "confirm").lower()
+
+    if grade is not None and grade not in range(5):
+        raise HTTPException(
+            status_code=400,
+            detail="clinician_dr_level must be 0-4 (0=No DR, 1=Mild, 2=Moderate, 3=Severe, 4=PDR)",
+        )
+
+    screening.review_status = "completed"
+    screening.reviewed_by = reviewer.email
+    screening.reviewed_at = datetime.utcnow()
+    screening.review_notes = (body.review_notes or "").strip() or None
+    screening.clinician_decision = decision
+    screening.clinician_dr_level = grade
+
+    # Determine if this decision is an override
+    is_override = bool(
+        body.reviewer_override
+        or (decision == "modify" and grade is not None and grade != screening.dr_level)
+    )
+    screening.reviewer_override = is_override
+
+    # Update referral status based on clinician assessment
+    effective_level = grade if (is_override and grade is not None) else screening.dr_level
+    if decision == "refer":
+        screening.referral_needed = True
+    elif decision == "recapture":
+        screening.status = "recapture_requested"
+    elif effective_level is not None:
+        screening.referral_needed = effective_level >= 2
+
+    # Update the linked report to "verified"
+    _upsert_report(db, screening)
+
+    # Sync patient status
+    patient = db.query(Patient).filter(Patient.id == screening.patient_pk).first()
+    if patient:
+        _sync_patient_from_screening(patient, screening)
+
+    # Create notification for audit / clinical review completion
+    patient_label = patient.patient_id if patient else screening_id
+    db.add(
+        Notification(
+            category="Review Completed",
+            title=f"Review verified · {patient_label}",
+            detail=f"Clinician: {reviewer.full_name} ({reviewer.email}) · Decision: {decision.capitalize()}"
+            + (f" · Level {grade}" if grade is not None else ""),
+            time_label=datetime.utcnow().strftime("%d %b %Y %H:%M"),
+            path=f"/screening/results?sid={screening_id}",
+            is_read=False,
+        )
+    )
+
+    db.commit()
+    db.refresh(screening)
+
+    dispatch_n8n_event(
+        db=db,
+        event_type="screening.reviewed",
+        screening_id=screening.screening_id,
+        patient_id=patient.patient_id if patient else None,
+        payload={
+            "screening_id": screening.screening_id,
+            "patient_id": patient.patient_id if patient else None,
+            "reviewer": reviewer.full_name,
+            "reviewer_email": reviewer.email,
+            "decision": screening.clinician_decision,
+            "clinician_dr_level": screening.clinician_dr_level,
+            "ai_dr_level": screening.dr_level,
+            "override": screening.reviewer_override,
+            "notes": screening.review_notes,
+        },
+    )
+
+    return ReviewOut(
+        screening_id=screening.screening_id,
+        review_status=screening.review_status,
+        reviewed_by=screening.reviewed_by,
+        reviewed_at=screening.reviewed_at,
+        review_notes=screening.review_notes,
+        reviewer_override=screening.reviewer_override,
+        clinician_dr_level=screening.clinician_dr_level,
+        clinician_decision=screening.clinician_decision,
+        ai_dr_level=screening.dr_level,
+        dr_level=screening.dr_level,
+        confidence=screening.confidence,
+        model_used=screening.model_used,
+        referral_needed=screening.referral_needed,
+    )
+
+
+_MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB per eye image
+_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+_ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
+
+
+def _validate_and_save_image(upload: UploadFile, raw: bytes, dest: Path) -> None:
+    """Validate file extension, size, and Pillow decodability; then save."""
+    ext = Path(upload.filename or "").suffix.lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(_ALLOWED_EXTENSIONS))}",
+        )
+    if len(raw) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Image too large ({len(raw) // 1024} KB). Maximum is {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+    if len(raw) < 1024:
+        raise HTTPException(
+            status_code=400,
+            detail="File too small to be a valid fundus image (< 1 KB).",
+        )
+    # Verify the bytes are a decodable image and matches allowed formats
+    try:
+        import io as _io
+        from PIL import Image as _Img
+        with _Img.open(_io.BytesIO(raw)) as im:
+            detected_format = im.format
+            if detected_format not in _ALLOWED_FORMATS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image format '{detected_format}' not supported. Allowed formats: {', '.join(sorted(_ALLOWED_FORMATS))}",
+                )
+            im.verify()  # raises on corrupt data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File is not a valid image or is corrupted: {exc}",
+        ) from exc
+    dest.write_bytes(raw)
+
+
 @router.post("/{screening_id}/images", response_model=ScreeningOut)
 async def upload_images(
     screening_id: str,
     od: UploadFile | None = File(None),
     os_eye: UploadFile | None = File(None, alias="os"),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_roles(ROLE_OPERATOR, ROLE_ADMIN)),
 ):
     screening = db.query(Screening).filter(Screening.screening_id == screening_id).first()
     if not screening:
         raise HTTPException(status_code=404, detail="Screening not found")
 
+    if od is None and os_eye is None:
+        raise HTTPException(status_code=400, detail="At least one eye image (od or os) must be uploaded")
+
     folder = UPLOAD_DIR / screening_id
     folder.mkdir(parents=True, exist_ok=True)
 
     if od is not None:
+        od_raw = await od.read()
         od_path = folder / _safe_store_name(od.filename, "OD")
-        od_path.write_bytes(await od.read())
-        # Store path relative to uploads root for portability
+        _validate_and_save_image(od, od_raw, od_path)
         screening.od_image_path = str(od_path)
 
     if os_eye is not None:
+        os_raw = await os_eye.read()
         os_path = folder / _safe_store_name(os_eye.filename, "OS")
-        os_path.write_bytes(await os_eye.read())
+        _validate_and_save_image(os_eye, os_raw, os_path)
         screening.os_image_path = str(os_path)
 
     screening.step = "uploaded"
@@ -308,6 +512,7 @@ async def upload_images(
     db.commit()
     db.refresh(screening)
     return screening
+
 
 
 def _resolve_eye_path(screening: Screening, eye: str) -> Path:
@@ -321,6 +526,12 @@ def _resolve_eye_path(screening: Screening, eye: str) -> Path:
     if not raw:
         raise HTTPException(status_code=404, detail=f"No {key.upper()} image uploaded")
     path = Path(raw)
+    try:
+        resolved = path.resolve()
+        if not resolved.is_relative_to(UPLOAD_DIR.resolve()):
+            raise HTTPException(status_code=403, detail="Access denied: file path outside uploads")
+    except (ValueError, RuntimeError):
+        raise HTTPException(status_code=403, detail="Invalid path")
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"{key.upper()} image file missing on disk")
     return path
@@ -365,6 +576,12 @@ def get_gradcam_image(
     if not raw:
         raise HTTPException(status_code=404, detail="Grad-CAM not generated for this eye")
     path = Path(raw)
+    try:
+        resolved = path.resolve()
+        if not resolved.is_relative_to(UPLOAD_DIR.resolve()):
+            raise HTTPException(status_code=403, detail="Access denied: file path outside uploads")
+    except (ValueError, RuntimeError):
+        raise HTTPException(status_code=403, detail="Invalid path")
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Grad-CAM file missing")
     return FileResponse(path, media_type="image/png", filename=path.name)
@@ -486,6 +703,24 @@ def analyze_screening(
     _sync_patient_from_screening(patient, screening)
     db.commit()
 
+    if result.referral_needed:
+        dispatch_n8n_event(
+            db=db,
+            event_type="screening.referral_alert",
+            screening_id=screening.screening_id,
+            patient_id=patient.patient_id,
+            payload={
+                "screening_id": screening.screening_id,
+                "patient_id": patient.patient_id,
+                "patient_name": patient.full_name,
+                "center": screening.center,
+                "dr_level": result.dr_level,
+                "confidence": result.confidence,
+                "model_used": result.model_used,
+                "referral_needed": result.referral_needed,
+            },
+        )
+
     return AnalyzeResponse(
         screening_id=screening.screening_id,
         status=screening.status,
@@ -541,4 +776,10 @@ def get_results(
         follow_up_date=s.follow_up_date,
         follow_up_center=s.follow_up_center,
         follow_up_notes=s.follow_up_notes,
+        clinician_dr_level=s.clinician_dr_level,
+        clinician_decision=s.clinician_decision,
+        reviewed_by=s.reviewed_by,
+        reviewed_at=s.reviewed_at,
+        review_notes=s.review_notes,
+        reviewer_override=bool(s.reviewer_override),
     )
