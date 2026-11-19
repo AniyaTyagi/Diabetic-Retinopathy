@@ -4,7 +4,8 @@ import { useActiveScreening } from "@/shared/screening/useActiveScreening";
 import { useScreeningFlowNav } from "@/shared/screening/useScreeningFlowNav";
 import { useApiData } from "@/shared/hooks/useApiData";
 import { getScreeningResults } from "@/shared/api/screenings";
-import { useAuthImage, screeningImagePath } from "@/shared/hooks/useAuthImage";
+import { downloadReportPdf } from "@/shared/api/reports";
+import { useAuthImage, screeningImagePath, gradcamImagePath } from "@/shared/hooks/useAuthImage";
 import {
   C, Ico, FundusImg, Badge, ConfBar, Sidebar, Header,
   Card, ActionButton, DR,
@@ -13,6 +14,111 @@ import {
 import { useState } from "react";
 
 const DR_SHORT = ["No DR", "Mild", "Moderate", "Severe", "PDR"];
+
+/** Plain-language explanation per DR grade (ICDR severity scale). */
+const RESULT_EXPLAIN: { means: string; action: string; steps: string[] }[] = [
+  {
+    means: "No signs of diabetic retinopathy were found in the uploaded images.",
+    action: "No referral needed. Repeat screening in 12 months.",
+    steps: [
+      "Keep blood sugar, blood pressure and cholesterol under control.",
+      "Come back sooner if vision changes.",
+    ],
+  },
+  {
+    means: "Earliest stage. Only tiny bulges in the retinal blood vessels (microaneurysms) are present. Vision is usually not affected.",
+    action: "No treatment needed now. Repeat screening in 12 months.",
+    steps: [
+      "Tighter control of blood sugar and blood pressure slows progression.",
+      "Come back sooner if vision changes.",
+    ],
+  },
+  {
+    means: "Blood vessel damage has progressed: small bleeds or leakage (haemorrhages, exudates) are present, but not yet severe.",
+    action: "Refer to an ophthalmologist within 30 days for a full dilated eye exam.",
+    steps: [
+      "The eye doctor will check for swelling at the centre of vision (macular oedema).",
+      "Review diabetes, blood pressure and cholesterol control with the treating doctor.",
+    ],
+  },
+  {
+    means: "Widespread bleeding and vessel damage in the retina. High risk of progressing to the sight-threatening proliferative stage.",
+    action: "Refer to an ophthalmologist within 2 to 4 weeks. Do not delay.",
+    steps: [
+      "Laser or injection treatment may be advised to protect vision.",
+      "Close follow-up every few months is usually needed.",
+    ],
+  },
+  {
+    means: "Most advanced stage. Fragile new blood vessels are growing on the retina and can bleed or pull the retina off, causing sudden vision loss.",
+    action: "Urgent referral to an ophthalmologist, ideally within 1 week.",
+    steps: [
+      "Treatment (laser, eye injections or surgery) can prevent blindness if given in time.",
+      "Sudden floaters, a dark curtain or loss of vision is an emergency: go the same day.",
+    ],
+  },
+];
+
+function ResultExplanation({
+  level,
+  confidence,
+  disagree,
+  qmlLabel,
+  pending,
+}: {
+  level: number;
+  confidence: number;
+  disagree?: boolean;
+  qmlLabel?: string;
+  pending: boolean;
+}) {
+  const info = RESULT_EXPLAIN[level] ?? RESULT_EXPLAIN[0];
+  const dr = DR[level] ?? DR[0];
+  const cautions: string[] = [];
+  if (confidence < 0.6) {
+    cautions.push(`The AI is not very sure of this grade (${(confidence * 100).toFixed(0)}% confidence).`);
+  }
+  if (disagree) {
+    cautions.push(`The two AI models disagree${qmlLabel ? ` (the second model suggests ${qmlLabel})` : ""}.`);
+  }
+  const label = { fontSize: 11, fontWeight: 600, color: C.slate500, letterSpacing: 0.4, textTransform: "uppercase" as const, marginBottom: 6 };
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: C.textPrimary, marginBottom: 14 }}>
+        What this result means
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
+        <div>
+          <div style={label}>The finding</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: dr.text, marginBottom: 4 }}>
+            Level {level}: {dr.label}
+          </div>
+          <div style={{ fontSize: 13, color: C.slate600, lineHeight: 1.55 }}>{info.means}</div>
+        </div>
+        <div>
+          <div style={label}>What to do next</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.textPrimary, marginBottom: 6 }}>{info.action}</div>
+          <ul style={{ margin: 0, paddingLeft: 18, listStyle: "disc", fontSize: 13, color: C.slate600, lineHeight: 1.55 }}>
+            {info.steps.map(step => <li key={step}>{step}</li>)}
+          </ul>
+        </div>
+      </div>
+      {cautions.length > 0 && (
+        <div style={{
+          marginTop: 14, padding: "10px 14px", borderRadius: 10, fontSize: 12, lineHeight: 1.5,
+          background: C.bg, border: `1px solid ${C.border}`, color: C.slate600,
+        }}>
+          <span style={{ fontWeight: 700, color: C.textPrimary }}>Check carefully: </span>
+          {cautions.join(" ")} A clinician should confirm the grade.
+        </div>
+      )}
+      <div style={{ marginTop: 12, fontSize: 11, color: C.slate500, lineHeight: 1.5 }}>
+        This is an AI screening result, not a diagnosis.
+        {pending ? " It is awaiting clinician review." : ""}
+      </div>
+    </Card>
+  );
+}
 
 function thumbForLevel(level: number): FundusV {
   if (level >= 4) return "proliferative";
@@ -66,6 +172,75 @@ function EyeFundus({
   );
 }
 
+function GradCamTile({ path, label }: { path: string | null; label: string }) {
+  const { src, loading, error } = useAuthImage(path);
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{
+        aspectRatio: "1 / 1", borderRadius: 12, overflow: "hidden",
+        background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {src ? (
+          <img src={src} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        ) : (
+          <span style={{ fontSize: 11, color: C.slate400, padding: 8, textAlign: "center" }}>
+            {loading ? "Loading…" : error ? "Not available" : "Not generated"}
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: C.slate300, marginTop: 6, textAlign: "center" }}>{label}</div>
+    </div>
+  );
+}
+
+function GradCamPanel({
+  screeningId,
+  eye,
+  hasImage,
+  gradcam,
+  disclaimer,
+}: {
+  screeningId: string;
+  eye: "od" | "os";
+  hasImage?: boolean;
+  gradcam?: { source?: string; predicted_class?: number; error?: string };
+  disclaimer?: string;
+}) {
+  const ok = Boolean(screeningId && gradcam && !gradcam.error && gradcam.source !== "failed");
+  const cls = gradcam?.predicted_class;
+  return (
+    <div style={{ padding: "16px 20px 20px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.white }}>Grad-CAM explainability</div>
+        {ok && typeof cls === "number" && (
+          <div style={{ fontSize: 11, color: C.slate400 }}>
+            CNN attention for L{cls} {DR_SHORT[cls] ?? ""}
+          </div>
+        )}
+      </div>
+      {ok ? (
+        <div style={{ display: "flex", gap: 10 }}>
+          <GradCamTile path={hasImage ? screeningImagePath(screeningId, eye) : null} label="Original" />
+          <GradCamTile path={gradcamImagePath(screeningId, eye, "heatmap")} label="Heatmap" />
+          <GradCamTile path={gradcamImagePath(screeningId, eye, "overlay")} label="Overlay" />
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: C.slate400 }}>
+          {gradcam?.error
+            ? "Grad-CAM could not be generated for this eye."
+            : "No Grad-CAM for this eye yet. Run AI analysis with an uploaded image."}
+        </div>
+      )}
+      {ok && (
+        <div style={{ fontSize: 11, color: C.slate400, marginTop: 10, lineHeight: 1.5 }}>
+          {disclaimer || "Warm regions show where the CNN focused for this grade. Assistive only; confirm with clinician review."}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProbBars({ probs }: { probs?: Record<string, number> | null }) {
   if (!probs) return null;
   return (
@@ -98,6 +273,21 @@ function ResultsOverviewScreen({ onNext, onNav, screeningId, nextLabel, showRepo
   const navigate = useNavigate();
   const [activeNav] = useState<NavKey>("screenings");
   const [eye, setEye] = useState<"od" | "os">("od");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  async function handleDownloadReport(reportId: string) {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      await downloadReportPdf(reportId);
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : "Report download failed");
+    } finally {
+      setPdfBusy(false);
+    }
+  }
   const { data: result, loading, error } = useApiData(
     () => getScreeningResults(screeningId),
     null as Awaited<ReturnType<typeof getScreeningResults>> | null,
@@ -149,6 +339,16 @@ function ResultsOverviewScreen({ onNext, onNav, screeningId, nextLabel, showRepo
             </div>
           </Card>
 
+          {result && result.dr_level != null && (
+            <ResultExplanation
+              level={level}
+              confidence={conf}
+              disagree={mc?.disagree}
+              qmlLabel={mc?.qml_label}
+              pending={result.review_status === "pending"}
+            />
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: "1.05fr 0.95fr", gap: 20 }}>
             <div style={{ background: C.navy, borderRadius: 18, overflow: "hidden", border: `1px solid rgba(255,255,255,0.08)` }}>
               <div style={{ padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -186,6 +386,13 @@ function ResultsOverviewScreen({ onNext, onNav, screeningId, nextLabel, showRepo
                   Eye grade L{eyeResult.dr_level} · conf {((eyeResult.confidence ?? 0) * 100).toFixed(1)}%
                 </div>
               )}
+              <GradCamPanel
+                screeningId={screeningId}
+                eye={eye}
+                hasImage={hasEye}
+                gradcam={result?.explainability?.gradcam?.[eye]}
+                disclaimer={result?.explainability?.disclaimer}
+              />
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -236,9 +443,7 @@ function ResultsOverviewScreen({ onNext, onNav, screeningId, nextLabel, showRepo
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 600, color: C.indigo, marginBottom: 4 }}>AI Recommendation</div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: C.textPrimary }}>
-                      {result?.referral_needed
-                        ? "Refer to District Hospital / ophthalmology within 30 days"
-                        : "Routine follow-up; no urgent referral indicated"}
+                      {(RESULT_EXPLAIN[level] ?? RESULT_EXPLAIN[0]).action}
                     </div>
                   </div>
                 </div>
@@ -285,15 +490,20 @@ function ResultsOverviewScreen({ onNext, onNav, screeningId, nextLabel, showRepo
                   <ActionButton variant="primary" size="md" style={{ width: "100%" }} onClick={onNext} icon={<Ico.ArrowR />}>
                     {nextLabel}
                   </ActionButton>
-                  {showReport && result?.report_id && (
+                  {result?.report_id && (
                     <ActionButton
                       variant="secondary"
                       size="md"
                       style={{ width: "100%" }}
-                      onClick={() => navigate(`/reports/clinical?id=${encodeURIComponent(result.report_id!)}`)}
+                      icon={<Ico.Download />}
+                      disabled={pdfBusy}
+                      onClick={() => void handleDownloadReport(result.report_id!)}
                     >
-                      View Report ({result.report_id})
+                      {pdfBusy ? "Preparing report…" : "Download full report (PDF)"}
                     </ActionButton>
+                  )}
+                  {pdfError && (
+                    <div style={{ fontSize: 12, color: C.danger }}>{pdfError}</div>
                   )}
                 </div>
               </Card>

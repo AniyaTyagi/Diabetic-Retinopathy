@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user, require_roles
-from app.ml import DR_LABELS, analyze
+from app.ml import DR_LABELS, INFERENCE_LOCK, analyze
 from app.ml.gradcam import generate_gradcam
 from app.models import Notification, Patient, Report, Screening, User
 from app.roles import ROLE_ADMIN, ROLE_OPERATOR, ROLE_OPHTHALMOLOGIST, ROLE_REVIEWER
@@ -638,7 +638,8 @@ def analyze_screening(
     model = (body.model if body else "ensemble")
     paths = [p for p in [screening.od_image_path, screening.os_image_path] if p]
     try:
-        result = analyze(model=model, image_paths=paths or None)
+        with INFERENCE_LOCK:
+            result = analyze(model=model, image_paths=paths or None)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — surface inference errors to client
@@ -670,7 +671,8 @@ def analyze_screening(
         if not img_path or not Path(img_path).is_file():
             continue
         try:
-            gc = generate_gradcam(img_path, folder, stem=eye_key)
+            with INFERENCE_LOCK:
+                gc = generate_gradcam(img_path, folder, stem=eye_key)
             gradcam_meta[eye_key] = {
                 "heatmap_path": gc["heatmap_path"],
                 "overlay_path": gc["overlay_path"],

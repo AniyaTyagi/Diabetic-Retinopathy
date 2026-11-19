@@ -44,13 +44,25 @@ def generate_gradcam(image_path: str, out_dir: Path, stem: str = "od") -> dict:
         pred = int(logits.argmax(dim=-1).item())
         logits[0, pred].backward()
 
-    grads = hidden.grad[0, 1:]  # patches
-    acts = hidden.detach()[0, 1:]
-    weights = grads.relu().mean(dim=1)  # [N]
-    cam = (weights.unsqueeze(-1) * acts).sum(dim=-1)  # [N]
-    cam = cam.relu()
-    if float(cam.max()) > 0:
-        cam = cam / cam.max()
+    grads = hidden.grad[0, 1:]  # [N, C] patches
+    acts = hidden.detach()[0, 1:]  # [N, C]
+    # Standard Grad-CAM: one weight per channel (gradient averaged over patches),
+    # then a weighted sum of channel activations at each patch.
+    channel_weights = grads.mean(dim=0)  # [C]
+    cam = (acts * channel_weights.unsqueeze(0)).sum(dim=-1)  # [N]
+    positive = cam.relu()
+    if float(positive.max()) > 0:
+        cam = positive
+    else:
+        # No patch pushes the class up: fall back to relative evidence.
+        cam = cam - cam.min()
+    # Robust scaling so a few outlier patches do not wash out the map.
+    lo = float(torch.quantile(cam, 0.40))
+    hi = float(torch.quantile(cam, 0.99))
+    if hi <= lo:
+        lo, hi = float(cam.min()), float(cam.max())
+    if hi > lo:
+        cam = ((cam - lo) / (hi - lo)).clamp(0, 1)
 
     n = cam.shape[0]
     side = int(np.sqrt(n))
@@ -61,10 +73,16 @@ def generate_gradcam(image_path: str, out_dir: Path, stem: str = "od") -> dict:
         cam = F.pad(cam, (0, pad))
     cam_map = cam[: side * side].reshape(side, side).cpu().numpy()
 
-    # Upsample CAM to original image size
-    cam_img = Image.fromarray((cam_map * 255).astype(np.uint8), mode="L").resize(
-        original.size, resample=Image.BICUBIC
+    # The processor resizes the short edge then centre-crops, so the CAM covers
+    # only that crop. Paste it back at the matching place in the original image.
+    width, height = original.size
+    box = _model_view_box(processor, width, height)
+    box_w, box_h = box[2] - box[0], box[3] - box[1]
+    cam_crop = Image.fromarray((cam_map * 255).astype(np.uint8), mode="L").resize(
+        (box_w, box_h), resample=Image.BICUBIC
     )
+    cam_img = Image.new("L", (width, height), 0)
+    cam_img.paste(cam_crop, (box[0], box[1]))
     cam_arr = np.asarray(cam_img).astype(np.float32) / 255.0
 
     # Jet-like heatmap RGB
@@ -72,7 +90,9 @@ def generate_gradcam(image_path: str, out_dir: Path, stem: str = "od") -> dict:
     heatmap_img = Image.fromarray(heatmap, mode="RGB")
 
     base = np.asarray(original).astype(np.float32)
-    overlay = (0.45 * heatmap.astype(np.float32) + 0.55 * base).clip(0, 255).astype(np.uint8)
+    # Blend by CAM strength so low-attention areas keep the original fundus.
+    alpha = (0.6 * cam_arr)[..., None]
+    overlay = (alpha * heatmap.astype(np.float32) + (1 - alpha) * base).clip(0, 255).astype(np.uint8)
     overlay_img = Image.fromarray(overlay, mode="RGB")
 
     heatmap_path = out_dir / f"gradcam_{stem}_heatmap.png"
@@ -87,6 +107,24 @@ def generate_gradcam(image_path: str, out_dir: Path, stem: str = "od") -> dict:
         "overlay_path": str(overlay_path),
         "grid": side,
     }
+
+
+def _model_view_box(processor, width: int, height: int) -> tuple[int, int, int, int]:
+    """Region of the original image the model sees after resize + centre crop."""
+    size = getattr(processor, "size", None) or {}
+    crop = getattr(processor, "crop_size", None) or {}
+    short = size.get("shortest_edge") if hasattr(size, "get") else None
+    crop_h = crop.get("height") if hasattr(crop, "get") else None
+    crop_w = crop.get("width") if hasattr(crop, "get") else None
+    do_crop = bool(getattr(processor, "do_center_crop", False))
+    if not (short and crop_h and crop_w and do_crop):
+        return (0, 0, width, height)
+    scale = short / min(width, height)
+    box_w = max(1, min(width, int(round(crop_w / scale))))
+    box_h = max(1, min(height, int(round(crop_h / scale))))
+    left = (width - box_w) // 2
+    top = (height - box_h) // 2
+    return (left, top, left + box_w, top + box_h)
 
 
 def _jet_colormap(gray: np.ndarray) -> np.ndarray:

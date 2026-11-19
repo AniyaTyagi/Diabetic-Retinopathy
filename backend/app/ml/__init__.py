@@ -1,9 +1,20 @@
 """ML inference — CNN (DINOv2) + Hybrid QML live; ensemble uses both."""
 
+import os
+import threading
 from dataclasses import dataclass
 
-from app.ml import cnn as cnn_mod
-from app.ml import qml as qml_mod
+# Keep transformers on PyTorch only. Loading TensorFlow in the same process as
+# torch+CUDA can corrupt the native heap on Windows.
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+
+# One inference at a time: the DINOv2 model (forward + Grad-CAM hooks/backward)
+# and the PennyLane QNode are shared singletons and are not thread-safe.
+INFERENCE_LOCK = threading.RLock()
+
+from app.ml import cnn as cnn_mod  # noqa: E402
+from app.ml import qml as qml_mod  # noqa: E402
 
 DR_LABELS = {
     0: "No DR",
@@ -42,7 +53,7 @@ def run_cnn(image_paths: list[str] | None = None) -> InferenceResult:
             referral_needed=False,
             details={
                 "warning": "CNN model weights not found — no inference performed.",
-                "note": "Place trained model files in app/models/weights/CNN/ to enable real inference.",
+                "note": "Place trained model files in app/ml/weights/CNN/ to enable real inference.",
                 "model_dir": str(cnn_mod.cnn_model_dir()),
                 "is_stub": True,
             },
@@ -90,7 +101,7 @@ def run_qml(image_paths: list[str] | None = None, features: dict | None = None) 
             referral_needed=False,
             details={
                 "warning": "QML artifacts not found — no inference performed.",
-                "note": "Place pca.pkl, scaler.pkl, and qmodel/ in app/models/weights/ to enable QML.",
+                "note": "Place pca.pkl, scaler.pkl, and qmodel.pth in app/ml/weights/ to enable QML.",
                 "is_stub": True,
             },
         )

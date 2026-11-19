@@ -12,6 +12,8 @@ import { analyzeScreening, getScreeningResults, type ScreeningResults } from "@/
 import { API_BASE, getToken } from "@/shared/api/auth";
 import { useEffect, useState } from "react";
 
+const inflightAnalyze = new Map<string, ReturnType<typeof analyzeScreening>>();
+
 type PipelineStep = {
   label: string;
   done: boolean;
@@ -222,7 +224,15 @@ function AIAnalysisScreen({
       setStatusMsg("Running CNN + QML ensemble (first load may take 1–2 min)…");
       const t0 = Date.now();
       try {
-        const ar = await analyzeScreening(screeningId, "ensemble");
+        // Reuse an in-flight request (React StrictMode runs this effect twice in dev).
+        let pending = inflightAnalyze.get(screeningId);
+        if (!pending) {
+          pending = analyzeScreening(screeningId, "ensemble").finally(() => {
+            inflightAnalyze.delete(screeningId);
+          });
+          inflightAnalyze.set(screeningId, pending);
+        }
+        const ar = await pending;
         if (cancelled) return;
         const ms = Date.now() - t0;
         setElapsedMs(ms);

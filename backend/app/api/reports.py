@@ -86,6 +86,10 @@ def download_report_pdf(
     quality_score: float | None = None
     od_gradcam_overlay: str | None = None
     os_gradcam_overlay: str | None = None
+    od_gradcam_heatmap: str | None = None
+    os_gradcam_heatmap: str | None = None
+    model_compare: dict | None = None
+    per_eye: list[dict] = []
     if screening:
         quality_score = screening.quality_score
         try:
@@ -100,6 +104,24 @@ def download_report_pdf(
                     od_gradcam_overlay = grad["od"].get("overlay_path")
                 if isinstance(grad.get("os"), dict):
                     os_gradcam_overlay = grad["os"].get("overlay_path")
+                if isinstance(grad.get("od"), dict):
+                    od_gradcam_heatmap = grad["od"].get("heatmap_path")
+                if isinstance(grad.get("os"), dict):
+                    os_gradcam_heatmap = grad["os"].get("heatmap_path")
+                if isinstance(exp.get("model_compare"), dict):
+                    model_compare = exp["model_compare"]
+                for item in exp.get("per_eye") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    img = item.get("image_path")
+                    eye = "od" if img and img == screening.od_image_path else (
+                        "os" if img and img == screening.os_image_path else ""
+                    )
+                    per_eye.append({
+                        "eye": eye,
+                        "dr_level": item.get("dr_level"),
+                        "confidence": item.get("confidence"),
+                    })
         except Exception:  # noqa: BLE001
             pass
 
@@ -129,6 +151,11 @@ def download_report_pdf(
         os_image_path=screening.os_image_path if screening else None,
         od_gradcam_overlay=od_gradcam_overlay,
         os_gradcam_overlay=os_gradcam_overlay,
+        od_gradcam_heatmap=od_gradcam_heatmap,
+        os_gradcam_heatmap=os_gradcam_heatmap,
+        dr_level=screening.dr_level if screening else None,
+        model_compare=model_compare,
+        per_eye=per_eye,
     )
     filename = f"{r.report_id}.pdf"
     return Response(

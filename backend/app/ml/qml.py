@@ -1,6 +1,6 @@
 """Hybrid QML inference — notebook pipeline, weights read-only.
 
-Pipeline: DINOv2 1536-d features → PCA(4) → StandardScaler → PennyLane HybridQML → 5-class DR.
+Pipeline: DINOv2 1536-d features → PCA(4) → StandardScaler → PennyLane HybridQML (4 qubits, 4 layers) → 5-class DR.
 """
 
 from __future__ import annotations
@@ -16,11 +16,12 @@ from PIL import Image
 
 WEIGHTS_DIR = Path(__file__).resolve().parent / "weights"
 QMODEL_DIR = WEIGHTS_DIR / "qmodel"
+QMODEL_PTH = WEIGHTS_DIR / "qmodel.pth"
 PCA_PATH = WEIGHTS_DIR / "pca.pkl"
 SCALER_PATH = WEIGHTS_DIR / "scaler.pkl"
 
 N_QUBITS = 4
-N_LAYERS = 2
+N_LAYERS = 4  # qmodel.pth q.weights is (4, 4)
 N_CLASSES = 5
 FEAT_DIM = 1536
 
@@ -35,12 +36,8 @@ def qml_enabled() -> bool:
     flag = os.getenv("NETRAX_QML_ENABLED", "1").strip().lower()
     if flag in {"0", "false", "no", "off"}:
         return False
-    return (
-        QMODEL_DIR.is_dir()
-        and PCA_PATH.is_file()
-        and SCALER_PATH.is_file()
-        and (QMODEL_DIR / "data.pkl").is_file()
-    )
+    has_qmodel = QMODEL_PTH.is_file() or (QMODEL_DIR / "data.pkl").is_file()
+    return has_qmodel and PCA_PATH.is_file() and SCALER_PATH.is_file()
 
 
 def qml_weights_dir() -> Path:
@@ -113,10 +110,14 @@ def _load():
                 f"QML artifacts missing or disabled under {WEIGHTS_DIR}"
             )
 
-        _device = _get_device()
+        # PennyLane default.qubit simulates on CPU; keep the tiny QML head there.
+        _device = torch.device("cpu")
         _pca = joblib.load(PCA_PATH)
         _scaler = joblib.load(SCALER_PATH)
-        state = _load_state_dict_from_qmodel_dir(QMODEL_DIR)
+        if QMODEL_PTH.is_file():
+            state = torch.load(QMODEL_PTH, map_location="cpu", weights_only=True)
+        else:
+            state = _load_state_dict_from_qmodel_dir(QMODEL_DIR)
         model = _build_hybrid_qml()
         model.load_state_dict(state)
         model.to(_device)

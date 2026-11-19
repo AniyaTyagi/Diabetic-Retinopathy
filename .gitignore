@@ -15,8 +15,8 @@ backend/test_smoke.db
 backend/uploads/
 !backend/uploads/.gitkeep
 
-# ML model weights (large; keep local only)
-backend/app/ml/weights/
+# ML model weights: ignored everywhere except the shipped inference weights
+# in backend/app/ml/weights/ (stored with Git LFS, see .gitattributes).
 *.safetensors
 *.pt
 *.pth
@@ -25,6 +25,7 @@ backend/app/ml/weights/
 *.h5
 *.pkl
 *.joblib
+!backend/app/ml/weights/**
 
 *.egg-info/
 .pytest_cache/
